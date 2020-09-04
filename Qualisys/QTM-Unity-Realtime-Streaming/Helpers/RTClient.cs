@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Threading;
+using UnityEditor.MemoryProfiler;
 
 namespace QualisysRealTime.Unity
 {
@@ -79,6 +80,83 @@ namespace QualisysRealTime.Unity
                 return rtStreamThread == null
                     ? RTConnectionState.Disconnected
                     : rtStreamThread.ReaderThreadState.connectionState;
+            }
+        }
+
+        public string CurrentCommand { 
+            get {
+                return ConnectionState == RTConnectionState.Connected
+                    ? rtStreamThread.ReaderThreadState.awaitingCommandResult
+                    : "None";
+            } 
+        }
+
+        public void SendNewMeasurement(Action<bool> onResult)
+        {
+            if (ConnectionState == RTConnectionState.Connected)
+            {
+                rtStreamThread.SendNewMeasurement(onResult);
+            }
+        }
+
+        public void SendSaveFile(string path, Action<bool> onResult)
+        {
+            if (ConnectionState == RTConnectionState.Connected)
+            { 
+                rtStreamThread.SendSaveFile(path, onResult);
+            }
+        }
+
+        public void SendCloseFile(Action<bool> onResult)
+        {
+            if (ConnectionState == RTConnectionState.Connected)
+            {
+                rtStreamThread.SendCloseFile(onResult);
+            }
+        }
+
+        public void SendStartCapture(Action<bool> onResult)
+        {
+            if (ConnectionState == RTConnectionState.Connected)
+            {
+                rtStreamThread.SendStartCapture(onResult);
+            }
+        }
+        public void SendTakeControl(Action<bool> onResult)
+        {
+            if (ConnectionState == RTConnectionState.Connected)
+            {
+                rtStreamThread.SendTakeControl(onResult);
+            }
+        }
+        public void SendReleaseControl(Action<bool> onResult)
+        {
+            if (ConnectionState == RTConnectionState.Connected)
+            {
+                rtStreamThread.SendReleaseControl(onResult);
+            }
+        }
+        public void SendStop(Action<bool> onResult)
+        {
+            if (ConnectionState == RTConnectionState.Connected)
+            {
+                rtStreamThread.SendStop(onResult);
+            }
+        }
+
+        public void SendStartRtFromFile(Action<bool> onResult)
+        {
+            if (ConnectionState == RTConnectionState.Connected)
+            {
+                rtStreamThread.SendStartRtFromFile(onResult);
+            }
+        }
+
+        internal void CancelAllCommands()
+        {
+            if (ConnectionState == RTConnectionState.Connected)
+            {
+                rtStreamThread.CancelAllCommands();
             }
         }
 
@@ -168,6 +246,7 @@ namespace QualisysRealTime.Unity
         {
             return ConnectionState == RTConnectionState.Connected && rtStreamThread.ReaderThreadState.isStreaming;
         }
+
         /// <summary>
         /// Get list of servers available on network (always add localhost)
         /// </summary>
@@ -307,6 +386,7 @@ namespace QualisysRealTime.Unity
         void UpdateThread() 
         {
             bool result = rtStreamThread.Update();
+
             if (!string.IsNullOrEmpty(rtStreamThread.ReaderThreadState.errorString)) 
             {
                 errorString = rtStreamThread.ReaderThreadState.errorString;

@@ -25,6 +25,7 @@ namespace QualisysRealTime.Unity
         internal string errorString = "";
         internal RTConnectionState connectionState = RTConnectionState.Connecting;
         internal bool isStreaming = false;
+        internal string awaitingCommandResult = "";
 
         static void CopyFromList<T>(List<T> source, List<T> target)
             where T : ICopyFrom<T>, new()
@@ -56,6 +57,7 @@ namespace QualisysRealTime.Unity
             this.frameNumber = rtState.frameNumber;
             this.frequency = rtState.frequency;
             this.connectionState = rtState.connectionState;
+            this.awaitingCommandResult = rtState.awaitingCommandResult;
         }
 
         public SixDOFBody GetBody(string name)

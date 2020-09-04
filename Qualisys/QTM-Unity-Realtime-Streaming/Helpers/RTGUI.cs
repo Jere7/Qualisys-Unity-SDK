@@ -103,6 +103,46 @@ namespace QualisysRealTime.Unity
 
                 if (RTClient.GetInstance().ConnectionState != RTConnectionState.Disconnected)
                 {
+                    if (GUILayout.Button("SendTakeControl"))
+                    {
+                        RTClient.GetInstance().SendTakeControl((x) => Debug.Log("SendTakeControl " + x.ToString()));
+                    }
+                    if (GUILayout.Button("SendReleaseControl"))
+                    {
+                        RTClient.GetInstance().SendReleaseControl((x) => Debug.Log("SendReleaseControl " + x.ToString()));
+                    }
+                    if (GUILayout.Button("SendStop"))
+                    {
+                        RTClient.GetInstance().SendStop((x) => Debug.Log("SendStop " + x.ToString()));
+                    }
+                    if (GUILayout.Button("SendNewMeasurement"))
+                    {
+                        RTClient.GetInstance().SendNewMeasurement((x) => Debug.Log("SendNewMeasurement " + x.ToString()));
+                    }
+                    if (GUILayout.Button("SendStartCapture"))
+                    {
+                        RTClient.GetInstance().SendStartCapture((x) => Debug.Log("SendStartCapture " + x.ToString()));
+                    }
+                    if (GUILayout.Button("SendStartRtFromFile"))
+                    {
+                        RTClient.GetInstance().SendStartRtFromFile((x) => Debug.Log("SendStartRtFromFile " + x.ToString()));
+                    }
+                    if (GUILayout.Button("SendCloseFile"))
+                    {
+                        RTClient.GetInstance().SendCloseFile((x) => Debug.Log("SendCloseFile " + x.ToString()));
+                    }
+                    if (GUILayout.Button("SendSaveFile"))
+                    {
+                        RTClient.GetInstance().SendSaveFile("SendSaveFile.qtm", (x) => Debug.Log("SendSaveFile " + x.ToString()));
+                    }
+                    if (GUILayout.Button("Cancel Commands"))
+                    {
+                        RTClient.GetInstance().CancelAllCommands();
+                    }
+
+
+                    GUILayout.Label("Awaiting Command: " + RTClient.GetInstance().CurrentCommand);
+
                     if (GUILayout.Button("Disconnect"))
                     {
                         Disconnect();
@@ -135,15 +175,23 @@ namespace QualisysRealTime.Unity
                             GUILayout.Label(channel.Name);
                         }
                     }
+
+
+
                 }
                 else
                 {
                     if (GUILayout.Button("Connect"))
                     {
                         Connect();
-                        Repaint();
                     }
                 }
+
+               
+
+
+                Repaint();
+                
             }
             else
             {
