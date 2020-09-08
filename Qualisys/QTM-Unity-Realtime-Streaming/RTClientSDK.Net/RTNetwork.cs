@@ -67,7 +67,7 @@ namespace QTMRealTimeSDK.Network
 
                 return false;
             }
-            
+
             return true;
         }
 
@@ -78,6 +78,14 @@ namespace QTMRealTimeSDK.Network
         {
             if (mTCPClient != null)
             {
+                if (mTCPClient.Client != null)
+                {
+                    // If this is not checked, I keep getting a "The socket is not connected" exception
+                    if (mTCPClient.Client.Connected)
+                    {
+                        mTCPClient.Client.Shutdown(SocketShutdown.Send);
+                    }
+                }
                 mTCPClient.Close();
                 mTCPClient = null;
             }
@@ -128,9 +136,7 @@ namespace QTMRealTimeSDK.Network
                 {
                     mUDPClient = tempSocket;
                 }
-
                 return true;
-                
             }
             else
             {
@@ -175,6 +181,7 @@ namespace QTMRealTimeSDK.Network
             }
             return -1;
         }
+
         internal int Receive(ref byte[] receivebuffer, int offset, int bufferSize, bool header, int timeout)
         {
             try
@@ -245,13 +252,13 @@ namespace QTMRealTimeSDK.Network
             {
                 sentData += mTCPClient.Client.Send(sendBuffer);
             }
-            catch(SocketException e)
+            catch (SocketException e)
             {
                 mErrorString = e.Message;
                 mSocketError = e.SocketErrorCode;
                 return false;
             }
-            
+
             return true;
         }
 
@@ -259,7 +266,7 @@ namespace QTMRealTimeSDK.Network
         /// Try and get all the local ip adresses
         /// </summary>
         /// <returns></returns>
-        private List<IPAddress> GetLocalIPAddresses()
+        private static List<IPAddress> GetLocalIPAddresses()
         {
             try
             {
@@ -371,7 +378,6 @@ namespace QTMRealTimeSDK.Network
             }
             return true;
         }
-
         /// <summary>
         /// Error string related to errors that could have occurred during execution of commands
         /// </summary>
@@ -418,32 +424,32 @@ namespace QTMRealTimeSDK.Network
             if (address == null || subnetMask == null)
                 return null;
 
-            byte[] ipAddressBytes = address.GetAddressBytes();
+            byte[] ipAdressBytes = address.GetAddressBytes();
             byte[] subnetMaskBytes = subnetMask.GetAddressBytes();
 
-            if (ipAddressBytes.Length != subnetMaskBytes.Length)
+            if (ipAdressBytes.Length != subnetMaskBytes.Length)
                 throw new ArgumentException("Lengths of IP address and subnet mask do not match.");
 
-            byte[] broadcastAddress = new byte[ipAddressBytes.Length];
+            byte[] broadcastAddress = new byte[ipAdressBytes.Length];
             for (int i = 0; i < broadcastAddress.Length; i++)
             {
-                broadcastAddress[i] = (byte)(ipAddressBytes[i] | (subnetMaskBytes[i] ^ 255));
+                broadcastAddress[i] = (byte)(ipAdressBytes[i] | (subnetMaskBytes[i] ^ 255));
             }
             return new IPAddress(broadcastAddress);
         }
 
         internal static IPAddress GetNetworkAddress(this IPAddress address, IPAddress subnetMask)
         {
-            byte[] ipAddressBytes = address.GetAddressBytes();
+            byte[] ipAdressBytes = address.GetAddressBytes();
             byte[] subnetMaskBytes = subnetMask.GetAddressBytes();
 
-            if (ipAddressBytes.Length != subnetMaskBytes.Length)
+            if (ipAdressBytes.Length != subnetMaskBytes.Length)
                 throw new ArgumentException("Lengths of IP address and subnet mask do not match.");
 
-            byte[] broadcastAddress = new byte[ipAddressBytes.Length];
+            byte[] broadcastAddress = new byte[ipAdressBytes.Length];
             for (int i = 0; i < broadcastAddress.Length; i++)
             {
-                broadcastAddress[i] = (byte)(ipAddressBytes[i] & (subnetMaskBytes[i]));
+                broadcastAddress[i] = (byte)(ipAdressBytes[i] & (subnetMaskBytes[i]));
             }
             return new IPAddress(broadcastAddress);
         }

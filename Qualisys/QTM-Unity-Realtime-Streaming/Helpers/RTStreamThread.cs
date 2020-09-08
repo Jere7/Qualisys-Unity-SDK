@@ -13,70 +13,6 @@ using UnityEditorInternal;
 
 namespace QualisysRealTime.Unity
 {
-
-
-
-
-
-    /*
-         void command_release_control(CRTProtocol& rtProtocol)
-    {
-        rtProtocol.ReleaseControl();
-        rtProtocol.Disconnect();
-    }
-    
-
-
-    bool command_save(CRTProtocol& rtProtocol, const std::string& filename,  CommandResult& result)
-    {
-        if (!rtProtocol.SaveCapture(filename.c_str(), true)) 
-        {
-            result = {
-                OperationResult::FailedToSaveMeasurement,
-                std::string(rtProtocol.GetErrorString())
-            };
-            return false;
-        }
-        return true;
-    }
-
-    bool command_load(CRTProtocol& rtProtocol, const std::string& filename, CommandResult& result)
-    {
-        if (!rtProtocol.LoadCapture(filename.c_str())) {
-            result =  {
-                OperationResult::FailedToLoadMeasurement,
-                std::string(rtProtocol.GetErrorString())
-            };
-            return false;
-        }
-        return true;
-    }
-
-    bool command_stop(CRTProtocol& rtProtocol, CommandResult& result)
-    {
-        auto r = qtmc::send_command_await_event(rtProtocol, "Stop", {
-            { "No measurement is running", CRTPacket::EEvent::EventNone },
-            { "Stopping measurement" , CRTPacket::EEvent::EventCaptureStopped }
-        });
-
-        if (r.has_error()) {
-            result = {
-                OperationResult::FailedToStopCapture,
-                r.errorString
-            };
-            return false;
-        }
-
-        return true;
-    }
-
-         
-         
-         
-         
-         */
-
-
     /// <summary>
     /// A class for handling a Connection to QTM and stream data.
     /// Public methods are safe to use by the Main thread.
@@ -94,7 +30,6 @@ namespace QualisysRealTime.Unity
 
         const int LOWEST_SUPPORTED_UNITY_MAJOR_VERSION = 1;
         const int LOWEST_SUPPORTED_UNITY_MINOR_VERSION = 13;
-        public RTState ReaderThreadState { get; private set; }
 
         object syncLock = new object();
         Thread writerThread;
@@ -104,7 +39,6 @@ namespace QualisysRealTime.Unity
         short udpPort;
         string IpAddress;
         volatile bool killThread = false;
-        volatile bool cancelCommands = false;
         bool disposed = false;
 
         List<QTMRealTimeSDK.Data.Analog> cachedAnalog = new List<QTMRealTimeSDK.Data.Analog>();
@@ -113,14 +47,15 @@ namespace QualisysRealTime.Unity
         List<QTMRealTimeSDK.Data.Q3D> cachedUnabeledMarkers = new List<QTMRealTimeSDK.Data.Q3D>();
         List<QTMRealTimeSDK.Data.SkeletonData> cachedSkeletons = new List<QTMRealTimeSDK.Data.SkeletonData>();
         List<QTMRealTimeSDK.Data.GazeVector> cachedGazeVectors = new List<QTMRealTimeSDK.Data.GazeVector>();
-        internal ConcurrentQueue<QtmCommandHandler.ICommand> qtmCommands = new ConcurrentQueue<QtmCommandHandler.ICommand>();
-        internal ConcurrentQueue<QtmCommandHandler.CommandResult> qtmCommandResults = new ConcurrentQueue<QtmCommandHandler.CommandResult>();
+
+        private ConcurrentQueue<string> qtmCommandsToSend = new ConcurrentQueue<string>();
 
 
         public RTStreamThread(string IpAddress, short udpPort, StreamRate streamRate, bool stream6d, bool stream3d, bool stream3dNoLabels, bool streamGaze, bool streamAnalog, bool streamSkeleton)
         {
             this.writerThreadState = new RTState();
-            this.ReaderThreadState = new RTState();
+            writerThreadState.connectionState = RTConnectionState.Connecting;
+
             this.IpAddress = IpAddress;
             this.streamRate = streamRate;
             this.udpPort = udpPort;
@@ -167,76 +102,23 @@ namespace QualisysRealTime.Unity
             Dispose(false);
         }
 
-        /// <summary>
-        /// Returns true as long as the object is in a valid state
-        /// </summary>
-        /// <returns></returns>
-        public bool Update()
+
+        public void UpdateState( RTState target )
         {
             lock (syncLock)
             {
-                ReaderThreadState.CopyFrom(writerThreadState);
+                target.TakeFrom(writerThreadState);
             }
-            if (ReaderThreadState.connectionState == RTConnectionState.Disconnected)
-            {
-                Debug.Log(ReaderThreadState.errorString);
-            }
-
-            QtmCommandHandler.CommandResult commandResult;
-            while (qtmCommandResults.TryDequeue(out commandResult))
-            {
-                commandResult.command.OnResult.Invoke(commandResult.success);
-            }
-            return ReaderThreadState.connectionState != RTConnectionState.Disconnected;
         }
-
-        public void SendSaveFile(string path, Action<bool> onResult) 
+        public void SendCommand(string command) 
         {
-            qtmCommands.Enqueue(new QtmCommandHandler.Save(path, onResult));
-        }
-
-        public void SendCloseFile(Action<bool> onResult)
-        {
-            qtmCommands.Enqueue(new QtmCommandHandler.Close(onResult));
-        }
-
-        public void SendNewMeasurement(Action<bool> onResult)
-        {
-            qtmCommands.Enqueue(new QtmCommandHandler.New(onResult));
-        }
-        
-
-        public void SendStartCapture(Action<bool> onResult)
-        {
-            qtmCommands.Enqueue(new QtmCommandHandler.StartCapture(onResult));
-        }
-        public void SendTakeControl(Action<bool> onResult)
-        {
-            qtmCommands.Enqueue(new QtmCommandHandler.TakeControl("gait1",onResult));
-        }
-        public void SendReleaseControl(Action<bool> onResult)
-        {
-            qtmCommands.Enqueue(new QtmCommandHandler.ReleaseControl(onResult));
-        }
-        public void SendStop(Action<bool> onResult)
-        {
-            qtmCommands.Enqueue(new QtmCommandHandler.Stop(onResult));
-        }
-
-        public void SendStartRtFromFile(Action<bool> onResult)
-        {
-            qtmCommands.Enqueue(new QtmCommandHandler.StartRtFromFile(onResult));
-        }
-
-        public void CancelAllCommands()
-        {
-            cancelCommands = true;
+            qtmCommandsToSend.Enqueue(command);
         }
         void WriterThreadFunction() 
         {
             try
             {
-                var qtmCommandAwaiter = new QtmCommandHandler.QtmCommandAwaiter();
+
                 using (var rtProtocol = new RTProtocol(LOWEST_SUPPORTED_UNITY_MAJOR_VERSION, LOWEST_SUPPORTED_UNITY_MINOR_VERSION))
                 {
                     if (!rtProtocol.Connect(IpAddress, udpPort, RTProtocol.Constants.MAJOR_VERSION, RTProtocol.Constants.MINOR_VERSION))
@@ -273,115 +155,77 @@ namespace QualisysRealTime.Unity
                         {
                             throw new WriterThreadException("Thread was killed");
                         }
-                        
-                        if (cancelCommands) 
-                        {
-                            cancelCommands = false;
-                            qtmCommandAwaiter.CancelAwait();
-                            
-                            while (qtmCommands.TryDequeue(out _)) { 
-                            }
-                            
-                            lock (syncLock) 
-                            {
-                                writerThreadState.awaitingCommandResult = string.Empty;
-                            }
-                        }
 
-                        if (!qtmCommandAwaiter.IsAwaiting)
+                        string commandToSend;
+                        if (qtmCommandsToSend.TryDequeue(out commandToSend)) 
                         {
-                            QtmCommandHandler.ICommand command;
-                            if (qtmCommands.TryDequeue(out command)) 
+                            if (!rtProtocol.SendString(commandToSend, PacketType.PacketCommand)) 
                             {
-                                if (!rtProtocol.SendString(command.Command, PacketType.PacketCommand))
-                                {
-                                    throw new WriterThreadException("Failed to send command " + command.Command);
-                                }
-                                else 
-                                {
-                                    qtmCommandAwaiter.Await(command);
-                                    lock (syncLock) 
-                                    {
-                                        writerThreadState.awaitingCommandResult = command.Command;
-                                    }
-                                }
+                                throw new WriterThreadException("Failed to send " + commandToSend);
                             }
                         }
 
                         PacketType packetType;
-                        if (rtProtocol.ReceiveRTPacket(out packetType, 0) <= 0)
+                        if (rtProtocol.ReceiveRTPacket(out packetType, 0) > 0)
                         {
-                            continue;
-                        }
-
-                        var packet = rtProtocol.Packet;
-                        if (packet != null)
-                        {
-                            if (packetType == PacketType.PacketData)
+                            var packet = rtProtocol.Packet;
+                            if (packet != null)
                             {
-                                lock (syncLock)
+                                if (packetType == PacketType.PacketData)
                                 {
-                                    Process(writerThreadState, packet);
-                                }
-                            }
-                            else if (packetType == PacketType.PacketCommand) 
-                            {
-                                if (qtmCommandAwaiter.IsAwaiting)
-                                {
-                                    qtmCommandAwaiter.SetResultString(packet.GetCommandString());
-                                }
-                            }
-                            else if (packetType == PacketType.PacketEvent)
-                            {
-                                QTMEvent currentEvent = packet.GetEvent();
-                                if (qtmCommandAwaiter.IsAwaiting)
-                                {
-                                    qtmCommandAwaiter.AppendEvent(currentEvent);
-                                }
-                                switch (currentEvent)
-                                {
-                                    case QTMEvent.EventQTMShuttingDown:
-                                    case QTMEvent.EventConnectionClosed:
-                                        throw new WriterThreadException("Qtm closed connection");
-
-                                    case QTMEvent.EventRTFromFileStarted:
-                                    case QTMEvent.EventConnected:
-                                    case QTMEvent.EventCaptureStarted:
-                                    case QTMEvent.EventCalibrationStarted:
-                                    case QTMEvent.EventCameraSettingsChanged:
-                                        lock (syncLock)
-                                        {
-                                            // reload settings when we start streaming to get proper settings
-                                            if (!UpdateSettings(writerThreadState, rtProtocol, componentSelection))
-                                            {
-                                                throw new WriterThreadException("Failed to update settings: " + rtProtocol.GetErrorString());
-                                            }
-
-                                            if (!StartStreaming(writerThreadState, rtProtocol, streamRate, udpPort))
-                                            {
-                                                throw new WriterThreadException("Failed to start stream: " + rtProtocol.GetErrorString());
-                                            }
-
-                                        }
-                                        break;
-                                    default: break;
-                                }
-                            }
-
-                            if (qtmCommandAwaiter.IsAwaiting) 
-                            {
-                                QtmCommandHandler.CommandResult commandResult;
-                                if (qtmCommandAwaiter.TryGetResult(out commandResult)) 
-                                {
-                                    this.qtmCommandResults.Enqueue(commandResult);
                                     lock (syncLock)
                                     {
-                                        writerThreadState.awaitingCommandResult = "";
+                                        Process(writerThreadState, packet);
+                                    }
+                                }
+                                else if (packetType == PacketType.PacketCommand)
+                                {
+                                    lock (syncLock)
+                                    {
+                                        writerThreadState.commandStrings.Enqueue(packet.GetCommandString());
+                                    }
+
+                                }
+                                else if (packetType == PacketType.PacketEvent)
+                                {
+                                    QTMEvent currentEvent = packet.GetEvent();
+                                    
+                                    lock (syncLock) 
+                                    {
+                                        writerThreadState.events.Enqueue(currentEvent);
+                                    }
+                                    
+
+                                    switch (currentEvent)
+                                    {
+                                        case QTMEvent.EventQTMShuttingDown:
+                                            throw new WriterThreadException("Qtm closed connection (" + currentEvent.ToString() + ")");
+
+                                        case QTMEvent.EventRTFromFileStarted:
+                                        case QTMEvent.EventConnected:
+                                        case QTMEvent.EventCaptureStarted:
+                                        case QTMEvent.EventCalibrationStarted:
+                                        case QTMEvent.EventCameraSettingsChanged:
+                                            lock (syncLock)
+                                            {
+                                                // reload settings when we start streaming to get proper settings
+                                                if (!UpdateSettings(writerThreadState, rtProtocol, componentSelection))
+                                                {
+                                                    throw new WriterThreadException("Failed to update settings: " + rtProtocol.GetErrorString());
+                                                }
+
+                                                if (!StartStreaming(writerThreadState, rtProtocol, streamRate, udpPort))
+                                                {
+                                                    throw new WriterThreadException("Failed to start stream: " + rtProtocol.GetErrorString());
+                                                }
+                                            }
+                                            break;
+                                        case QTMEvent.EventConnectionClosed: 
+                                            //Dispatched when closing file
+                                        default: break;
                                     }
                                 }
                             }
-                            
-
                         }
                     }
                 }

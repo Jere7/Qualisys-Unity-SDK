@@ -17,166 +17,125 @@ namespace QualisysRealTime.Unity
         bool disposed = false;
         RTStreamThread rtStreamThread = null;
         string errorString = string.Empty;
+        QtmCommandHandler.QtmCommandAwaiter qtmCommandAwaiter = new QtmCommandHandler.QtmCommandAwaiter();
+        Queue<QtmCommandHandler.ICommand> qtmCommands = new Queue<QtmCommandHandler.ICommand>();
+        RTState networkState = new RTState();
+        public event Action<QTMRealTimeSDK.Data.QTMEvent> onNetworkEvent;
 
         public List<SixDOFBody> Bodies { 
             get { 
-                return rtStreamThread == null 
-                    ? new List<SixDOFBody>() 
-                    : rtStreamThread.ReaderThreadState.bodies; 
+                return networkState.bodies; 
             }
         }
 
         public List<LabeledMarker> Markers { 
             get { 
-                return rtStreamThread == null 
-                    ? new List<LabeledMarker>() 
-                    : rtStreamThread.ReaderThreadState.markers; 
+                return networkState.markers; 
             }
         }
 
         public List<UnlabeledMarker> UnlabeledMarkers { 
             get { 
-                return rtStreamThread == null 
-                    ? new List<UnlabeledMarker>() 
-                    : rtStreamThread.ReaderThreadState.unlabeledMarkers; 
+                return networkState.unlabeledMarkers; 
             } 
         }
 
         public List<Bone> Bones { 
             get { 
-                return rtStreamThread == null 
-                    ? new List<Bone>() 
-                    : rtStreamThread.ReaderThreadState.bones; 
+                return networkState.bones; 
             } 
         }
 
         public List<GazeVector> GazeVectors { 
             get { 
-                return rtStreamThread == null
-                    ? new List<GazeVector>()
-                    : rtStreamThread.ReaderThreadState.gazeVectors;
+                return  networkState.gazeVectors;
             }
         }
 
         public List<AnalogChannel> AnalogChannels { 
             get { 
-                return rtStreamThread == null 
-                    ? new List<AnalogChannel>() 
-                    : rtStreamThread.ReaderThreadState.analogChannels; 
+                return networkState.analogChannels; 
             } 
         }
 
         public List<Skeleton> Skeletons { 
             get { 
-                return rtStreamThread == null 
-                    ? new List<Skeleton>() 
-                    : rtStreamThread.ReaderThreadState.skeletons; 
+                return networkState.skeletons; 
             } 
         }
 
         public RTConnectionState ConnectionState
         {
             get {
-                return rtStreamThread == null
-                    ? RTConnectionState.Disconnected
-                    : rtStreamThread.ReaderThreadState.connectionState;
+                return rtStreamThread == null 
+                    ? RTConnectionState.Disconnected : networkState.connectionState;
             }
         }
 
-        public string CurrentCommand { 
-            get {
-                return ConnectionState == RTConnectionState.Connected
-                    ? rtStreamThread.ReaderThreadState.awaitingCommandResult
-                    : "None";
-            } 
-        }
-
-        public void SendNewMeasurement(Action<bool> onResult)
+        public string CurrentCommand
         {
-            if (ConnectionState == RTConnectionState.Connected)
+            get
             {
-                rtStreamThread.SendNewMeasurement(onResult);
+                return qtmCommandAwaiter.CurrentCommand;
             }
         }
 
-        public void SendSaveFile(string path, Action<bool> onResult)
+        public void SendSaveFile(string path, Action<QtmCommandResult> onResult)
         {
-            if (ConnectionState == RTConnectionState.Connected)
+            qtmCommands.Enqueue(new QtmCommandHandler.Save(path, onResult));
+        }
+
+        public void SendCloseFile(Action<QtmCommandResult> onResult)
+        {
+            qtmCommands.Enqueue(new QtmCommandHandler.Close(onResult));
+        }
+
+        public void SendNewMeasurement(Action<QtmCommandResult> onResult)
+        {
+            qtmCommands.Enqueue(new QtmCommandHandler.New(onResult));
+        }
+
+        public void SendStartCapture(Action<QtmCommandResult> onResult)
+        {
+            qtmCommands.Enqueue(new QtmCommandHandler.StartCapture(onResult));
+        }
+        public void SendTakeControl(string password, Action<QtmCommandResult> onResult)
+        {
+            qtmCommands.Enqueue(new QtmCommandHandler.TakeControl(password, onResult));
+        }
+        public void SendReleaseControl(Action<QtmCommandResult> onResult)
+        {
+            qtmCommands.Enqueue(new QtmCommandHandler.ReleaseControl(onResult));
+        }
+        public void SendStop(Action<QtmCommandResult> onResult)
+        {
+            qtmCommands.Enqueue(new QtmCommandHandler.Stop(onResult));
+        }
+
+        public void SendStartRtFromFile(Action<QtmCommandResult> onResult)
+        {
+            qtmCommands.Enqueue(new QtmCommandHandler.StartRtFromFile(onResult));
+        }
+
+        public void CancelAllCommands()
+        {
+            if (qtmCommandAwaiter.IsAwaiting)
             { 
-                rtStreamThread.SendSaveFile(path, onResult);
+                qtmCommandAwaiter.CancelAwait();
             }
+            qtmCommands.Clear();
         }
 
-        public void SendCloseFile(Action<bool> onResult)
-        {
-            if (ConnectionState == RTConnectionState.Connected)
-            {
-                rtStreamThread.SendCloseFile(onResult);
-            }
-        }
-
-        public void SendStartCapture(Action<bool> onResult)
-        {
-            if (ConnectionState == RTConnectionState.Connected)
-            {
-                rtStreamThread.SendStartCapture(onResult);
-            }
-        }
-        public void SendTakeControl(Action<bool> onResult)
-        {
-            if (ConnectionState == RTConnectionState.Connected)
-            {
-                rtStreamThread.SendTakeControl(onResult);
-            }
-        }
-        public void SendReleaseControl(Action<bool> onResult)
-        {
-            if (ConnectionState == RTConnectionState.Connected)
-            {
-                rtStreamThread.SendReleaseControl(onResult);
-            }
-        }
-        public void SendStop(Action<bool> onResult)
-        {
-            if (ConnectionState == RTConnectionState.Connected)
-            {
-                rtStreamThread.SendStop(onResult);
-            }
-        }
-
-        public void SendStartRtFromFile(Action<bool> onResult)
-        {
-            if (ConnectionState == RTConnectionState.Connected)
-            {
-                rtStreamThread.SendStartRtFromFile(onResult);
-            }
-        }
-
-        internal void CancelAllCommands()
-        {
-            if (ConnectionState == RTConnectionState.Connected)
-            {
-                rtStreamThread.CancelAllCommands();
-            }
-        }
 
         // Get frame number from latest packet
         public int GetFrame()
         {
-            if (rtStreamThread == null)
-            { 
-                return 0;
-            }
-            return rtStreamThread.ReaderThreadState.frameNumber;
+            return networkState.frameNumber;
         }
 
         public int GetFrequency()
         {
-            if (rtStreamThread == null)
-            {
-                return 0;
-            }
-            return rtStreamThread.ReaderThreadState.frequency;
+            return networkState.frequency;
         }
 
         public static RTClient GetInstance()
@@ -191,60 +150,36 @@ namespace QualisysRealTime.Unity
 
         public SixDOFBody GetBody(string name)
         {
-            if (rtStreamThread == null)
-            {
-                return null;
-            }
-            return rtStreamThread.ReaderThreadState.GetBody(name);
+            return networkState.GetBody(name);
         }
 
         public Skeleton GetSkeleton(string name)
         {
-            if (rtStreamThread == null)
-            {
-                return null;
-            }
-            return rtStreamThread.ReaderThreadState.GetSkeleton(name);
+            return networkState.GetSkeleton(name);
         }
 
         public LabeledMarker GetMarker(string name)
         {
-            if (rtStreamThread == null)
-            {
-                return null;
-            }
-            return rtStreamThread.ReaderThreadState.GetMarker(name);
+            return networkState.GetMarker(name);
         }
 
         public UnlabeledMarker GetUnlabeledMarker(uint id)
         {
-            if (rtStreamThread == null)
-            {
-                return null;
-            }
-            return rtStreamThread.ReaderThreadState.GetUnlabeledMarker(id);
+            return networkState.GetUnlabeledMarker(id);
         }
 
         public AnalogChannel GetAnalogChannel(string name)
         {
-            if (rtStreamThread == null)
-            {
-                return null;
-            }
-            return rtStreamThread.ReaderThreadState.GetAnalogChannel(name);
+            return networkState.GetAnalogChannel(name);
         }
         public List<AnalogChannel> GetAnalogChannels(List<string> names)
         {
-            if (rtStreamThread == null)
-            {
-                return new List<AnalogChannel>();
-            }
-            return rtStreamThread.ReaderThreadState.GetAnalogChannels(names);
+            return networkState.GetAnalogChannels(names);
         }
 
         public bool GetStreamingStatus() 
         {
-            return ConnectionState == RTConnectionState.Connected && rtStreamThread.ReaderThreadState.isStreaming;
+            return ConnectionState == RTConnectionState.Connected && networkState.isStreaming;
         }
 
         /// <summary>
@@ -301,6 +236,9 @@ namespace QualisysRealTime.Unity
         /// <param name="streamAnalog">if analog data should be streamed.</param>
         public void StartConnecting(string IpAddress, short udpPort, bool stream6d, bool stream3d, bool stream3dNoLabels, bool streamGaze, bool streamAnalog, bool streamSkeleton)
         {
+            networkState = new RTState();
+            networkState.connectionState = RTConnectionState.Connecting;
+
             errorString = string.Empty;
             if (rtStreamThread != null)
             {
@@ -348,14 +286,8 @@ namespace QualisysRealTime.Unity
             StartConnecting(ipAddress, udpPort, stream6d, stream3d, stream3dNoLabels, streamGaze, streamAnalog, streamSkeleton);
             while (ConnectionState == RTConnectionState.Connecting)
             {
-                if (!rtStreamThread.Update())
-                {
-                    Disconnect();
-                }
-                else
-                {
-                    Thread.Sleep(TimeSpan.FromMilliseconds(200));
-                }
+                Thread.Sleep(TimeSpan.FromMilliseconds(200));
+                UpdateThread();
             }
             return ConnectionState == RTConnectionState.Connected;
         }
@@ -385,13 +317,47 @@ namespace QualisysRealTime.Unity
 
         void UpdateThread() 
         {
-            bool result = rtStreamThread.Update();
+            rtStreamThread.UpdateState(networkState);
 
-            if (!string.IsNullOrEmpty(rtStreamThread.ReaderThreadState.errorString)) 
+            if (!string.IsNullOrEmpty(networkState.errorString)) 
             {
-                errorString = rtStreamThread.ReaderThreadState.errorString;
+                errorString = networkState.errorString;
             }
-            if (!result)
+            
+            foreach (var x in networkState.events)
+            {
+                if (onNetworkEvent != null)
+                {
+                    onNetworkEvent(x);
+                }
+            }
+
+            if (qtmCommandAwaiter.IsAwaiting)
+            {
+                QtmCommandHandler.CommandAndResultPair pair;
+                foreach (var x in networkState.events) 
+                {
+                    qtmCommandAwaiter.AppendEvent(x);
+                }
+                foreach (var x in networkState.commandStrings)
+                {
+                    qtmCommandAwaiter.AppendCommandString(x);
+                }
+
+                if (qtmCommandAwaiter.TryGetResult(out pair))
+                {
+                    pair.command.OnResult(pair.result);
+                }
+            }
+
+            if (!qtmCommandAwaiter.IsAwaiting && qtmCommands.Count > 0)
+            {
+                var c = qtmCommands.Dequeue();
+                qtmCommandAwaiter.Await(c);
+                rtStreamThread.SendCommand(c.CommandString);
+            }
+
+            if (ConnectionState == RTConnectionState.Disconnected)
             {
                 Disconnect();
             }
